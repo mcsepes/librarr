@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // booktrackerSearchPage is a minimal phpBB-style search results page with one
@@ -64,10 +65,45 @@ func newBookTrackerTestServer(t *testing.T, authCookie bool) *httptest.Server {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("/search.php", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("nm"); got == "" {
+			t.Error("search request missing nm query parameter")
+		}
+		if got := r.URL.Query().Get("to"); got != "1" {
+			t.Errorf("to = %q, want 1", got)
+		}
+		if got := r.URL.Query().Get("max"); got != "20" {
+			t.Errorf("max = %q, want 20", got)
+		}
+		if got := r.URL.Query().Get("search_keywords"); got != "" {
+			t.Errorf("legacy search_keywords parameter unexpectedly sent: %q", got)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(booktrackerSearchPage))
 	})
 	return httptest.NewServer(mux)
+}
+
+func TestBookTrackerParseSearchResultsWithoutTableRows(t *testing.T) {
+	// BookTracker's current search endpoint uses div.topictitle cards instead
+	// of the older table-row result markup.
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`<html><body>
+<div class="topictitle"><a class="topictitle" href="viewtopic.php?t=24680">Булгаков - Мастер и Маргарита [fb2, 1.2 МБ]</a></div>
+</body></html>`))
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	s := &BookTracker{tab: "main"}
+	results := s.parseSearchResults(doc, "https://booktracker.example")
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Format != "fb2" {
+		t.Errorf("Format = %q, want fb2", results[0].Format)
+	}
+	if results[0].URL != "https://booktracker.example/viewtopic.php?t=24680" {
+		t.Errorf("URL = %q", results[0].URL)
+	}
 }
 
 func TestBookTrackerSearch(t *testing.T) {

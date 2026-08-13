@@ -69,16 +69,6 @@ var (
 	btAuthorRe    = regexp.MustCompile(`^(.+?)\s*-\s*`)
 )
 
-// forumIDForTab returns the BookTracker forum ID for the configured tab.
-func (b *BookTracker) forumIDForTab() string {
-	switch b.tab {
-	case "audiobook":
-		return "24" // Аудиокниги
-	default:
-		return "56" // Книги
-	}
-}
-
 // login authenticates to BookTracker and caches the session for 30 minutes.
 func (b *BookTracker) login() error {
 	b.mu.Lock()
@@ -164,8 +154,12 @@ func (b *BookTracker) Search(ctx context.Context, query string) ([]models.Search
 
 func (b *BookTracker) doSearch(ctx context.Context, query string) ([]models.SearchResult, error) {
 	baseURL := strings.TrimRight(b.cfg.BookTrackerURL, "/")
-	searchURL := fmt.Sprintf("%s/search.php?search_forum=%s&search_keywords=%s&show_results=topics",
-		baseURL, b.forumIDForTab(), url.QueryEscape(query))
+	params := url.Values{
+		"nm":  {query},
+		"to":  {"1"},
+		"max": {"20"},
+	}
+	searchURL := fmt.Sprintf("%s/search.php?%s", baseURL, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
@@ -204,12 +198,14 @@ func (b *BookTracker) parseSearchResults(doc *goquery.Document, baseURL string) 
 	var results []models.SearchResult
 	seenTopics := make(map[string]bool)
 
-	doc.Find("tr:has(a.topictitle)").Each(func(i int, s *goquery.Selection) {
+	// Current BookTracker search pages put result anchors in div.topictitle,
+	// not necessarily in a table row. Select the stable result anchor itself,
+	// then use its closest table row for optional size and seeder metadata.
+	doc.Find("a.topictitle").Each(func(i int, link *goquery.Selection) {
 		if len(results) >= 20 {
 			return
 		}
 
-		link := s.Find("a.topictitle").First()
 		href, exists := link.Attr("href")
 		if !exists {
 			return
@@ -249,7 +245,11 @@ func (b *BookTracker) parseSearchResults(doc *goquery.Document, baseURL string) 
 		}
 
 		// Extract size from row text.
-		rowText := s.Text()
+		row := link.Closest("tr")
+		rowText := link.Text()
+		if row.Length() > 0 {
+			rowText = row.Text()
+		}
 		var sizeHuman string
 		if m := btSizeRe.FindStringSubmatch(rowText); len(m) > 1 {
 			sizeHuman = m[1] + " " + m[2]
@@ -260,7 +260,7 @@ func (b *BookTracker) parseSearchResults(doc *goquery.Document, baseURL string) 
 		// and file-count cells as seeder counts, so we leave seeders at 0
 		// when the known selectors don't match rather than guess.
 		seeders := 0
-		seedEl := s.Find("td.seedLeach, td.leechseed, .seedmed, .seed, .leech, b.seedmed, span.seedmed")
+		seedEl := row.Find("td.seedLeach, td.leechseed, .seedmed, .seed, .leech, b.seedmed, span.seedmed")
 		if seedEl.Length() > 0 {
 			seedText := strings.TrimSpace(seedEl.First().Text())
 			if m := btSeedRe.FindStringSubmatch(seedText); len(m) > 1 {

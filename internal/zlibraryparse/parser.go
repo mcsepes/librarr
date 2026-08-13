@@ -120,6 +120,9 @@ func ErrorMessage(obj map[string]any) string {
 			return strings.Join(parts, "; ")
 		}
 	}
+	if value := stringValue(obj["errors"]); value != "" {
+		return value
+	}
 	return "unknown error"
 }
 
@@ -217,7 +220,18 @@ func stringValue(v any) string {
 		}
 		return strings.Join(parts, ", ")
 	case map[string]any:
-		return firstString(value, "name", "title", "value")
+		for _, key := range []string{"message", "error", "msg", "reason", "detail", "description", "name", "title", "value"} {
+			if nested := stringValue(value[key]); nested != "" {
+				return nested
+			}
+		}
+		var parts []string
+		for _, nestedValue := range value {
+			if nested := stringValue(nestedValue); nested != "" {
+				parts = append(parts, nested)
+			}
+		}
+		return strings.Join(parts, "; ")
 	default:
 		return ""
 	}

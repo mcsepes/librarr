@@ -223,6 +223,7 @@ func TestErrorMessage(t *testing.T) {
 		{map[string]any{"error": "bad key"}, "bad key"},
 		{map[string]any{"message": "nope"}, "nope"},
 		{map[string]any{"errors": []any{"a", "b"}}, "a; b"},
+		{map[string]any{"errors": map[string]any{"email": []any{"bad credentials"}}}, "bad credentials"},
 		{map[string]any{}, "unknown error"},
 	}
 	for _, c := range cases {
@@ -230,4 +231,59 @@ func TestErrorMessage(t *testing.T) {
 			t.Errorf("ErrorMessage(%v) = %q, want %q", c.obj, got, c.want)
 		}
 	}
+}
+
+func TestLoginSessionFromJSON(t *testing.T) {
+	t.Run("current eapi response", func(t *testing.T) {
+		got, err := LoginSessionFromJSON([]byte(`{"success":1,"user":{"id":42,"remix_userkey":"key"}}`))
+		if err != nil {
+			t.Fatalf("LoginSessionFromJSON: %v", err)
+		}
+		if got.UserID != 42 || got.UserKey != "key" {
+			t.Errorf("session = %+v", got)
+		}
+	})
+
+	t.Run("legacy rpc response", func(t *testing.T) {
+		got, err := LoginSessionFromJSON([]byte(`{"errors":[],"response":{"user_id":"42","user_key":"key"}}`))
+		if err != nil {
+			t.Fatalf("LoginSessionFromJSON: %v", err)
+		}
+		if got.UserID != 42 || got.UserKey != "key" {
+			t.Errorf("session = %+v", got)
+		}
+	})
+
+	t.Run("structured errors are surfaced", func(t *testing.T) {
+		_, err := LoginSessionFromJSON([]byte(`{"success":0,"errors":{"email":["bad credentials"]}}`))
+		if err == nil || !strings.Contains(err.Error(), "bad credentials") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+func TestDomainsFromJSON(t *testing.T) {
+	got, err := DomainsFromJSON([]byte(`{"success":1,"domains":["one.example",{"domain":"two.example"}]}`))
+	if err != nil {
+		t.Fatalf("DomainsFromJSON: %v", err)
+	}
+	if strings.Join(got, ",") != "one.example,two.example" {
+		t.Errorf("domains = %v", got)
+	}
+}
+
+func TestFileDownloadFromJSON(t *testing.T) {
+	t.Run("expiring URL", func(t *testing.T) {
+		got, err := FileDownloadFromJSON([]byte(`{"success":1,"file":{"downloadLink":"https://cdn.example/book.epub"}}`))
+		if err != nil || got != "https://cdn.example/book.epub" {
+			t.Fatalf("got %q, err %v", got, err)
+		}
+	})
+
+	t.Run("quota message", func(t *testing.T) {
+		_, err := FileDownloadFromJSON([]byte(`{"success":1,"file":{"allowDownload":false,"disallowDownloadMessage":"limit reached"}}`))
+		if err == nil || !strings.Contains(err.Error(), "limit reached") {
+			t.Fatalf("error = %v", err)
+		}
+	})
 }

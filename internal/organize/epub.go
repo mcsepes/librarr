@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // EPUBMeta holds extracted EPUB metadata.
@@ -117,6 +118,9 @@ func VerifyEPUBTitle(epubPath, expectedTitle string, threshold float64) (bool, s
 		// No title in metadata, can't verify -- let it pass.
 		return true, "", nil
 	}
+	if expected, actual := canonicalTitle(expectedTitle), canonicalTitle(meta.Title); expected != "" && expected == actual {
+		return true, meta.Title, nil
+	}
 
 	overlap := wordOverlap(expectedTitle, meta.Title)
 	if overlap >= threshold {
@@ -125,7 +129,10 @@ func VerifyEPUBTitle(epubPath, expectedTitle string, threshold float64) (bool, s
 	return false, meta.Title, nil
 }
 
-var wordExtractRe = regexp.MustCompile(`\w+`)
+// Go's regexp \\w is ASCII-only. EPUB metadata and source titles are routinely
+// Cyrillic or otherwise non-Latin, so extract Unicode letters and digits.
+var wordExtractRe = regexp.MustCompile(`[\p{L}\p{N}]+`)
+var bracketedEditionRe = regexp.MustCompile(`\[[^\]]+\]`)
 
 var epubStopwords = map[string]bool{
 	"the": true, "a": true, "an": true, "of": true, "in": true,
@@ -152,12 +159,35 @@ func wordOverlap(expected, actual string) float64 {
 
 func extractSignificantWords(s string) map[string]bool {
 	words := make(map[string]bool)
+	// Sources append edition/vendor markers such as "[litres]" and
+	// "[изд. 2012]". They describe the same book, unlike a real subtitle.
+	s = bracketedEditionRe.ReplaceAllString(s, " ")
 	for _, w := range wordExtractRe.FindAllString(strings.ToLower(s), -1) {
 		if !epubStopwords[w] && len(w) > 1 {
 			words[w] = true
 		}
 	}
 	return words
+}
+
+// canonicalTitle compares Unicode letters and numbers after removing
+// source-added edition tags and punctuation, while retaining real subtitles.
+func canonicalTitle(s string) string {
+	s = strings.ToLower(bracketedEditionRe.ReplaceAllString(s, " "))
+	var out strings.Builder
+	lastWasSpace := true
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			out.WriteRune(r)
+			lastWasSpace = false
+			continue
+		}
+		if !lastWasSpace {
+			out.WriteByte(' ')
+			lastWasSpace = true
+		}
+	}
+	return strings.TrimSpace(out.String())
 }
 
 // XML structures for EPUB parsing.

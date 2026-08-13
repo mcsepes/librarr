@@ -3,13 +3,13 @@ package search
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,21 +68,6 @@ func (z *ZLibrary) apiBase() string {
 	return strings.TrimRight(z.cfg.Sources.ZLibraryDefault, "/")
 }
 
-// --- Z-Library API response types ---
-
-type zlRPCLoginResponse struct {
-	Errors   []string `json:"errors"`
-	Response struct {
-		UserID  int    `json:"user_id"`
-		UserKey string `json:"user_key"`
-	} `json:"response"`
-}
-
-type zlDomainsResponse struct {
-	Success bool     `json:"success"`
-	Domains []string `json:"domains"`
-}
-
 // login authenticates with Z-Library and stores the session.
 func (z *ZLibrary) login(ctx context.Context) error {
 	z.mu.Lock()
@@ -94,16 +79,11 @@ func (z *ZLibrary) login(ctx context.Context) error {
 	}
 
 	baseURL := z.apiBase()
-	loginURL := fmt.Sprintf("%s/rpc.php", baseURL)
+	loginURL := fmt.Sprintf("%s/eapi/user/login", baseURL)
 
 	form := url.Values{}
-	form.Set("isModal", "true")
 	form.Set("email", z.cfg.ZLibraryEmail)
 	form.Set("password", z.cfg.ZLibraryPassword)
-	form.Set("site_mode", "books")
-	form.Set("action", "login")
-	form.Set("redirectUrl", baseURL+"/")
-	form.Set("gg_json_mode", "1")
 
 	req, err := http.NewRequestWithContext(ctx, "POST", loginURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -123,16 +103,16 @@ func (z *ZLibrary) login(ctx context.Context) error {
 		return fmt.Errorf("zlibrary login HTTP %d", resp.StatusCode)
 	}
 
-	var loginResp zlRPCLoginResponse
-	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return fmt.Errorf("zlibrary read login: %w", err)
+	}
+	session, err := zlibraryparse.LoginSessionFromJSON(body)
+	if err != nil {
 		return fmt.Errorf("zlibrary decode login: %w", err)
 	}
-
-	if len(loginResp.Errors) > 0 {
-		return fmt.Errorf("zlibrary login failed: %s", strings.Join(loginResp.Errors, "; "))
-	}
-	if loginResp.Response.UserID == 0 || loginResp.Response.UserKey == "" {
-		return fmt.Errorf("zlibrary login failed: missing session credentials")
+	if err := z.storeSessionCookies(baseURL, session.UserID, session.UserKey); err != nil {
+		return fmt.Errorf("zlibrary store session: %w", err)
 	}
 
 	z.loggedIn = true
@@ -145,6 +125,21 @@ func (z *ZLibrary) login(ctx context.Context) error {
 		z.personalURL = baseURL
 	}
 
+	return nil
+}
+
+func (z *ZLibrary) storeSessionCookies(baseURL string, userID int, userKey string) error {
+	if z.client.Jar == nil {
+		return fmt.Errorf("cookie jar is unavailable")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return err
+	}
+	z.client.Jar.SetCookies(parsed, []*http.Cookie{
+		{Name: "remix_userid", Value: strconv.Itoa(userID), Path: "/"},
+		{Name: "remix_userkey", Value: userKey, Path: "/"},
+	})
 	return nil
 }
 
@@ -165,14 +160,17 @@ func (z *ZLibrary) resolveDomains(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	var domainsResp zlDomainsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&domainsResp); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return fmt.Errorf("zlibrary read domains: %w", err)
+	}
+	domains, err := zlibraryparse.DomainsFromJSON(body)
+	if err != nil {
 		return fmt.Errorf("zlibrary decode domains: %w", err)
 	}
-
-	if domainsResp.Success && len(domainsResp.Domains) > 0 {
-		z.personalURL = "https://" + domainsResp.Domains[0]
-		slog.Debug("z-library personal domain resolved", "domain", domainsResp.Domains[0])
+	if len(domains) > 0 {
+		z.personalURL = "https://" + domains[0]
+		slog.Debug("z-library personal domain resolved", "domain", domains[0])
 	}
 
 	return nil

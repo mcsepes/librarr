@@ -21,23 +21,20 @@ func newZLibraryTestServer(t *testing.T, unauthorizedFirst bool) *httptest.Serve
 		searchCount int
 	)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rpc.php", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/eapi/user/login", func(w http.ResponseWriter, r *http.Request) {
 		loginCount++
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("ParseForm: %v", err)
-		}
-		if r.Form.Get("action") != "login" {
-			t.Fatalf("action = %q, want login", r.Form.Get("action"))
 		}
 		if r.Form.Get("email") == "" || r.Form.Get("password") == "" {
 			t.Fatalf("login form missing credentials")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"errors": []string{},
-			"response": map[string]any{
-				"user_id":  1,
-				"user_key": "session-key",
+			"success": 1,
+			"user": map[string]any{
+				"id":            1,
+				"remix_userkey": "session-key",
 			},
 		})
 	})
@@ -63,6 +60,9 @@ func newZLibraryTestServer(t *testing.T, unauthorizedFirst bool) *httptest.Serve
 		}
 		if r.Form.Get("message") == "" {
 			t.Fatalf("search form missing message")
+		}
+		if !strings.Contains(r.Header.Get("Cookie"), "remix_userid=1") || !strings.Contains(r.Header.Get("Cookie"), "remix_userkey=session-key") {
+			t.Fatalf("search missing session cookies: %q", r.Header.Get("Cookie"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -161,13 +161,13 @@ func TestZLibrarySessionRenewOn401(t *testing.T) {
 
 func TestZLibrarySearchHashlessResultUsesStableSourceID(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rpc.php", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/eapi/user/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"errors": []string{},
-			"response": map[string]any{
-				"user_id":  1,
-				"user_key": "session-key",
+			"success": 1,
+			"user": map[string]any{
+				"id":            1,
+				"remix_userkey": "session-key",
 			},
 		})
 	})

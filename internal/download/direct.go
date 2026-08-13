@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/JeremiahM37/librarr/internal/config"
@@ -538,15 +539,10 @@ func (d *DirectDownloader) zlibraryBase() string {
 func (d *DirectDownloader) zlibraryLogin(client *http.Client) error {
 	baseURL := d.zlibraryBase()
 	form := url.Values{}
-	form.Set("isModal", "true")
 	form.Set("email", d.cfg.ZLibraryEmail)
 	form.Set("password", d.cfg.ZLibraryPassword)
-	form.Set("site_mode", "books")
-	form.Set("action", "login")
-	form.Set("redirectUrl", baseURL+"/")
-	form.Set("gg_json_mode", "1")
 
-	req, err := http.NewRequest("POST", baseURL+"/rpc.php", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", baseURL+"/eapi/user/login", strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("zlibrary login request: %w", err)
 	}
@@ -563,21 +559,21 @@ func (d *DirectDownloader) zlibraryLogin(client *http.Client) error {
 		return fmt.Errorf("zlibrary login HTTP %d", resp.StatusCode)
 	}
 
-	var loginResp struct {
-		Errors   []string `json:"errors"`
-		Response struct {
-			UserID  int    `json:"user_id"`
-			UserKey string `json:"user_key"`
-		} `json:"response"`
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return fmt.Errorf("zlibrary read login: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
+	session, err := zlibraryparse.LoginSessionFromJSON(body)
+	if err != nil {
 		return fmt.Errorf("zlibrary decode login: %w", err)
 	}
-	if len(loginResp.Errors) > 0 {
-		return fmt.Errorf("zlibrary login failed: %s", strings.Join(loginResp.Errors, "; "))
-	}
-	if loginResp.Response.UserID == 0 || loginResp.Response.UserKey == "" {
-		return fmt.Errorf("zlibrary login failed: missing session credentials")
+	for _, cookie := range []struct{ name, value string }{
+		{"remix_userid", strconv.Itoa(session.UserID)},
+		{"remix_userkey", session.UserKey},
+	} {
+		if err := addCookie(client, baseURL, cookie.name, cookie.value); err != nil {
+			return fmt.Errorf("zlibrary store session: %w", err)
+		}
 	}
 	return nil
 }
@@ -600,32 +596,30 @@ func (d *DirectDownloader) resolveZLibraryDownloadURL(client *http.Client, curre
 }
 
 func (d *DirectDownloader) resolveZLibraryBookURL(client *http.Client, baseURL string, id int, hash string) (string, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/eapi/book/%d/%s", baseURL, id, hash), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/eapi/book/%d/%s/file", baseURL, id, hash), nil)
 	if err != nil {
-		return "", fmt.Errorf("zlibrary detail request: %w", err)
+		return "", fmt.Errorf("zlibrary download-link request: %w", err)
 	}
 	req.Header.Set("User-Agent", zlibraryUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("zlibrary detail: %w", err)
+		return "", fmt.Errorf("zlibrary download-link: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("zlibrary detail HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("zlibrary download-link HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("zlibrary read detail: %w", err)
+		return "", fmt.Errorf("zlibrary read download-link: %w", err)
 	}
-	if dl, err := zlibraryparse.DetailDownloadFromJSON(body); err == nil && dl != "" {
-		return zlibraryparse.AbsoluteURL(baseURL, dl), nil
+	dl, err := zlibraryparse.FileDownloadFromJSON(body)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary download-link response: %w", err)
 	}
-	if dl := zlibraryparse.FindDownloadLinkInHTML(baseURL, body); dl != "" {
-		return dl, nil
-	}
-	return "", fmt.Errorf("zlibrary detail missing download link")
+	return zlibraryparse.AbsoluteURL(baseURL, dl), nil
 }
 
 func (d *DirectDownloader) resolveZLibraryBookFromSearch(client *http.Client, baseURL, title, author string) (string, error) {

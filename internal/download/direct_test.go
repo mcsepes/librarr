@@ -239,6 +239,57 @@ func TestResolveZLibraryBookFromSearchAcceptsResultShape(t *testing.T) {
 	}
 }
 
+func TestDownloadFromZLibraryUsesFileEndpoint(t *testing.T) {
+	var sawFileEndpoint bool
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/eapi/user/login":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			if r.Form.Get("email") == "" || r.Form.Get("password") == "" {
+				t.Fatal("login missing credentials")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"success":1,"user":{"id":42,"remix_userkey":"session-key"}}`)
+		case "/eapi/book/7/bookhash/file":
+			sawFileEndpoint = true
+			if !strings.Contains(r.Header.Get("Cookie"), "remix_userid=42") || !strings.Contains(r.Header.Get("Cookie"), "remix_userkey=session-key") {
+				t.Fatalf("file endpoint missing session cookies: %q", r.Header.Get("Cookie"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"success":1,"file":{"downloadLink":%q}}`, server.URL+"/download.pdf")
+		case "/download.pdf":
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write(append([]byte("%PDF-1.7\n"), make([]byte, 2000)...))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	d := NewDirectDownloader(&config.Config{
+		IncomingDir:      t.TempDir(),
+		UserAgent:        "test",
+		ZLibraryURL:      server.URL,
+		ZLibraryEmail:    "u@example.com",
+		ZLibraryPassword: "pw",
+	}, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
+
+	filePath, _, err := d.DownloadFromZLibrary("", "Test Book", "", "zlibrary-7-bookhash", nil)
+	if err != nil {
+		t.Fatalf("DownloadFromZLibrary: %v", err)
+	}
+	if !sawFileEndpoint {
+		t.Fatal("current Z-Library file endpoint was not called")
+	}
+	if !strings.HasSuffix(filePath, ".pdf") {
+		t.Errorf("file path = %q, want PDF", filePath)
+	}
+}
+
 func TestDownloadFile_TooSmallRejected(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

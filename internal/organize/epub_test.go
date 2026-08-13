@@ -41,6 +41,8 @@ func TestExtractSignificantWords(t *testing.T) {
 		{"", map[string]bool{}},
 		{"I x y", map[string]bool{}}, // all single chars or stopwords
 		{"hello-world test", map[string]bool{"hello": true, "world": true, "test": true}},
+		{"Августовские пушки", map[string]bool{"августовские": true, "пушки": true}},
+		{"Уловка\\_22", map[string]bool{"уловка": true, "22": true}},
 	}
 
 	for _, tt := range tests {
@@ -83,6 +85,39 @@ func TestVerifyEPUBTitle_WordOverlapLogic(t *testing.T) {
 			t.Errorf("expected 1.0 for empty expected, got %f", overlap)
 		}
 	})
+
+	t.Run("Cyrillic title with source decoration passes", func(t *testing.T) {
+		overlap := wordOverlap("Августовские пушки [изд. 2012]", "Августовские пушки")
+		if overlap < 0.6 {
+			t.Errorf("expected Russian title overlap to pass, got %f", overlap)
+		}
+	})
+
+	t.Run("escaped underscore normalizes as punctuation", func(t *testing.T) {
+		overlap := wordOverlap("Уловка-22", "Уловка\\_22")
+		if overlap != 1.0 {
+			t.Errorf("expected punctuation-only title change to match, got %f", overlap)
+		}
+	})
+}
+
+func TestCanonicalTitle(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Августовские пушки [изд. 2012]", "августовские пушки"},
+		{"Уловка-22", "уловка 22"},
+		{"Уловка\\_22", "уловка 22"},
+		{"Pattern Recognition: A Novel", "pattern recognition a novel"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := canonicalTitle(tt.input); got != tt.want {
+				t.Errorf("canonicalTitle(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestNormalizeAuthor(t *testing.T) {

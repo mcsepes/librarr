@@ -36,7 +36,7 @@ func (o *OpenLibrary) Search(ctx context.Context, query string) ([]models.Search
 
 	q := req.URL.Query()
 	q.Set("q", query)
-	q.Set("fields", "key,title,author_name,ebook_access,ia,first_publish_year,cover_i")
+	q.Set("fields", "key,title,author_name,ebook_access,ia,first_publish_year,language,cover_i")
 	q.Set("limit", "15")
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("User-Agent", "Librarr/2.0 (book download manager; github.com/JeremiahM37/librarr)")
@@ -71,11 +71,6 @@ func (o *OpenLibrary) Search(ctx context.Context, query string) ([]models.Search
 			author = doc.AuthorName[0]
 		}
 
-		sizeHuman := "Public Domain"
-		if doc.FirstPublishYear > 0 {
-			sizeHuman = fmt.Sprintf("Public Domain (%d)", doc.FirstPublishYear)
-		}
-
 		coverURL := ""
 		if doc.CoverI > 0 {
 			coverURL = fmt.Sprintf("%s/b/id/%d-M.jpg", o.cfg.Sources.OpenLibrary.CoverURL, doc.CoverI)
@@ -93,7 +88,9 @@ func (o *OpenLibrary) Search(ctx context.Context, query string) ([]models.Search
 			SourceID:  fmt.Sprintf("ol-%s", doc.Key),
 			IAIDs:     iaIDs,
 			CoverURL:  coverURL,
-			SizeHuman: sizeHuman,
+			SizeHuman: "Public Domain",
+			Language:  firstSearchLanguage(doc.Language),
+			Year:      normalizeSearchYear(doc.FirstPublishYear),
 		})
 	}
 
@@ -111,5 +108,6 @@ type olDoc struct {
 	EbookAccess      string   `json:"ebook_access"`
 	IA               []string `json:"ia"`
 	FirstPublishYear int      `json:"first_publish_year"`
+	Language         []string `json:"language"`
 	CoverI           int      `json:"cover_i"`
 }

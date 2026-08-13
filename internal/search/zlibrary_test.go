@@ -76,6 +76,7 @@ func newZLibraryTestServer(t *testing.T, unauthorizedFirst bool) *httptest.Serve
 					"extension": "epub",
 					"filesize":  2_500_000,
 					"language":  "english",
+					"year":      2015,
 					"dl":        "/dl/custom-token",
 				},
 			},
@@ -127,6 +128,12 @@ func TestZLibrarySearch(t *testing.T) {
 	}
 	if r.SizeHuman == "" {
 		t.Errorf("SizeHuman should be non-empty")
+	}
+	if r.Language != "en" {
+		t.Errorf("Language = %q, want en", r.Language)
+	}
+	if r.Year != "2015" {
+		t.Errorf("Year = %q, want 2015", r.Year)
 	}
 }
 

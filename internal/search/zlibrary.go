@@ -290,6 +290,8 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 			DownloadURL: downloadURL,
 			SizeHuman:   sizeHuman,
 			Format:      format,
+			Language:    normalizeSearchLanguage(book.Language),
+			Year:        normalizeSearchYear(book.Year),
 		})
 	}
 

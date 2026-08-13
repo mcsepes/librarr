@@ -100,6 +100,7 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 		}
 
 		// Check language if present.
+		language := ""
 		infoText := post.Find(".postInfo").Text()
 		if langIdx := strings.Index(strings.ToLower(infoText), "language:"); langIdx >= 0 {
 			langStr := strings.TrimSpace(infoText[langIdx+9:])
@@ -107,8 +108,8 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 			if spaceIdx := strings.IndexAny(langStr, " \t\n,"); spaceIdx > 0 {
 				langStr = langStr[:spaceIdx]
 			}
-			langStr = strings.ToLower(strings.TrimSpace(langStr))
-			if langStr != "" && langStr != "english" {
+			language = normalizeSearchLanguage(langStr)
+			if language != "" && language != "en" {
 				return
 			}
 		}
@@ -121,6 +122,7 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 			Leechers:  0,
 			Indexer:   "AudioBookBay",
 			AbbURL:    href,
+			Language:  language,
 		})
 	})
 

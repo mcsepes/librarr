@@ -25,10 +25,10 @@ type SearchResult struct {
 	MediaType        string `json:"media_type,omitempty"`        // ebook, audiobook, manga
 	DownloadProtocol string `json:"download_protocol,omitempty"` // "torrent" or "nzb"
 
-	// Edition metadata, filled in by sources that publish it (Anna's Archive,
-	// Gutenberg). Language is an ISO 639 code ("en", "ru") so the UI can render
-	// it compactly; Year is a string because "not reported" and "year 0" are
-	// different things.
+	// Edition metadata, filled in by sources that publish it. Language is an ISO
+	// 639 code ("en", "ru") when the source provides a known label, so the UI can
+	// render it compactly; Year is a string because "not reported" and "year 0"
+	// are different things.
 	Language  string `json:"language,omitempty"`
 	Publisher string `json:"publisher,omitempty"`
 	Year      string `json:"year,omitempty"`

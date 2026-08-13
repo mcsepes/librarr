@@ -1,12 +1,64 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 )
+
+func TestOpenLibrarySearchSurfacesEditionMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("fields"); got == "" || !containsField(got, "language") {
+			t.Fatalf("fields = %q, want language", got)
+		}
+		_ = json.NewEncoder(w).Encode(olResponse{Docs: []olDoc{{
+			Key:              "/works/OL12345W",
+			Title:            "Pride and Prejudice",
+			AuthorName:       []string{"Jane Austen"},
+			EbookAccess:      "public",
+			IA:               []string{"prideandprejudice"},
+			FirstPublishYear: 1813,
+			Language:         []string{"eng"},
+			CoverI:           12345,
+		}}})
+	}))
+	defer server.Close()
+
+	cfg := configWithRegistry(t)
+	cfg.Sources.OpenLibrary.SearchURL = server.URL
+	cfg.Sources.OpenLibrary.CoverURL = server.URL
+	results, err := NewOpenLibrary(cfg, server.Client()).Search(context.Background(), "pride")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	result := results[0]
+	if result.Year != "1813" {
+		t.Errorf("Year = %q, want 1813", result.Year)
+	}
+	if result.Language != "en" {
+		t.Errorf("Language = %q, want en", result.Language)
+	}
+	if result.SizeHuman != "Public Domain" {
+		t.Errorf("SizeHuman = %q, want Public Domain", result.SizeHuman)
+	}
+}
+
+func containsField(fields, wanted string) bool {
+	for _, field := range strings.Split(fields, ",") {
+		if field == wanted {
+			return true
+		}
+	}
+	return false
+}
 
 func TestOpenLibrary_Metadata(t *testing.T) {
 	cfg := &config.Config{}

@@ -18,9 +18,11 @@ const flibustaOPDSFixture = `<?xml version="1.0" encoding="UTF-8"?>
     <author><name>Лев Толстой</name></author>
     <id>urn:b:12345</id>
     <link rel="http://opds-spec.org/image" href="/covers/12345.jpg"/>
-    <link rel="http://opds-spec.org/acquisition" href="/b/12345/epub" type="application/epub+zip"/>
-    <link rel="http://opds-spec.org/acquisition" href="/b/12345/fb2" type="application/fb2+zip"/>
-    <content>2.1 МБ</content>
+	    <link rel="http://opds-spec.org/acquisition" href="/b/12345/epub" type="application/epub+zip"/>
+	    <link rel="http://opds-spec.org/acquisition" href="/b/12345/fb2" type="application/fb2+zip"/>
+	    <dc:language xmlns:dc="http://purl.org/dc/terms/">Russian</dc:language>
+	    <dc:date xmlns:dc="http://purl.org/dc/terms/">1869-01-01</dc:date>
+	    <content>2.1 МБ</content>
   </entry>
   <entry>
     <title>Anna Karenina</title>
@@ -81,6 +83,12 @@ func TestFlibustaSearch(t *testing.T) {
 	}
 	if r0.SourceID != "flibusta-12345" {
 		t.Errorf("SourceID = %q, want flibusta-12345", r0.SourceID)
+	}
+	if r0.Language != "ru" {
+		t.Errorf("Language = %q, want ru", r0.Language)
+	}
+	if r0.Year != "1869" {
+		t.Errorf("Year = %q, want 1869", r0.Year)
 	}
 
 	// Second entry: absolute URL should pass through unchanged.

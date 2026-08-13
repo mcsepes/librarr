@@ -76,11 +76,13 @@ func FilterAndSortResults(results []models.SearchResult, query string, minSize, 
 		isTorrent := r.Source == "torrent" || r.Source == "prowlarr_manga" || r.Source == "nyaa_manga" ||
 			r.Source == "tpb" || r.Source == "tpb_audiobook" ||
 			r.Source == "booktracker" || r.Source == "booktracker_audiobook"
+		isBookTracker := r.Source == "booktracker" || r.Source == "booktracker_audiobook"
 		isABB := r.Source == "audiobook"
 
 		if isTorrent {
-			// Seed count threshold (ABB may have 0 seeders with valid magnets).
-			if r.Seeders < 1 {
+			// BookTracker's current result page does not expose seed counts. A zero
+			// therefore means unknown for that source, unlike other torrent feeds.
+			if r.Seeders < 1 && !isBookTracker {
 				continue
 			}
 			// Size bounds.

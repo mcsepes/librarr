@@ -55,6 +55,9 @@ func TestAudioBookBaySearchSetsBrowserHeaders(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+	if results[0].Language != "en" {
+		t.Errorf("Language = %q, want en", results[0].Language)
+	}
 	if got := rt.req.Header.Get("User-Agent"); got != abbBrowserUserAgent {
 		t.Fatalf("User-Agent = %q, want %q", got, abbBrowserUserAgent)
 	}

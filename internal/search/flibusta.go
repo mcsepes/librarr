@@ -32,17 +32,19 @@ func (f *Flibusta) SearchTab() string    { return "main" }
 func (f *Flibusta) DownloadType() string { return "direct" }
 
 var (
-	flEntryRe   = regexp.MustCompile(`(?s)<entry>(.*?)</entry>`)
-	flTitleRe   = regexp.MustCompile(`(?s)<title[^>]*>(.*?)</title>`)
-	flAuthorRe  = regexp.MustCompile(`(?s)<author[^>]*>.*?<name>(.*?)</name>`)
-	flLinkRe    = regexp.MustCompile(`<link[^>]*rel="http://opds-spec\.org/acquisition"[^>]*href="([^"]+)"[^>]*type="([^"]+)"[^>]*/?>`)
-	flLinkRe2   = regexp.MustCompile(`<link[^>]*type="([^"]+)"[^>]*href="([^"]+)"[^>]*rel="http://opds-spec\.org/acquisition"[^>]*/?>`)
-	flCoverRe   = regexp.MustCompile(`<link[^>]*rel="http://opds-spec\.org/image"[^>]*href="([^"]+)"`)
-	flCoverRe2  = regexp.MustCompile(`<link[^>]*href="([^"]+)"[^>]*rel="http://opds-spec\.org/image"`)
-	flTagRe     = regexp.MustCompile(`<[^>]+>`)
-	flContentRe = regexp.MustCompile(`(?s)<content[^>]*>(.*?)</content>`)
-	flSizeRe    = regexp.MustCompile(`(\d+[\.\d]*\s*[КKМMG]?[iI]?[БBb]?)`)
-	flBookIDRe  = regexp.MustCompile(`/b/(\d+)`)
+	flEntryRe    = regexp.MustCompile(`(?s)<entry>(.*?)</entry>`)
+	flTitleRe    = regexp.MustCompile(`(?s)<title[^>]*>(.*?)</title>`)
+	flAuthorRe   = regexp.MustCompile(`(?s)<author[^>]*>.*?<name>(.*?)</name>`)
+	flLinkRe     = regexp.MustCompile(`<link[^>]*rel="http://opds-spec\.org/acquisition"[^>]*href="([^"]+)"[^>]*type="([^"]+)"[^>]*/?>`)
+	flLinkRe2    = regexp.MustCompile(`<link[^>]*type="([^"]+)"[^>]*href="([^"]+)"[^>]*rel="http://opds-spec\.org/acquisition"[^>]*/?>`)
+	flCoverRe    = regexp.MustCompile(`<link[^>]*rel="http://opds-spec\.org/image"[^>]*href="([^"]+)"`)
+	flCoverRe2   = regexp.MustCompile(`<link[^>]*href="([^"]+)"[^>]*rel="http://opds-spec\.org/image"`)
+	flTagRe      = regexp.MustCompile(`<[^>]+>`)
+	flContentRe  = regexp.MustCompile(`(?s)<content[^>]*>(.*?)</content>`)
+	flSizeRe     = regexp.MustCompile(`(\d+[\.\d]*\s*[КKМMG]?[iI]?[БBb]?)`)
+	flLanguageRe = regexp.MustCompile(`(?is)<(?:dc:)?language[^>]*>(.*?)</(?:dc:)?language>`)
+	flDateRe     = regexp.MustCompile(`(?is)<(?:dc:)?date[^>]*>(.*?)</(?:dc:)?date>`)
+	flBookIDRe   = regexp.MustCompile(`/b/(\d+)`)
 )
 
 // formatPriority defines the preferred download format order.
@@ -137,6 +139,14 @@ func (f *Flibusta) Search(ctx context.Context, query string) ([]models.SearchRes
 
 		// Derive format from MIME type.
 		format := formatFromMIME(bestFormat)
+		language := ""
+		if match := flLanguageRe.FindStringSubmatch(entryText); len(match) > 1 {
+			language = normalizeSearchLanguage(flTagRe.ReplaceAllString(match[1], ""))
+		}
+		year := ""
+		if match := flDateRe.FindStringSubmatch(entryText); len(match) > 1 {
+			year = normalizeSearchYear(flTagRe.ReplaceAllString(match[1], ""))
+		}
 
 		results = append(results, models.SearchResult{
 			Source:      "flibusta",
@@ -148,6 +158,8 @@ func (f *Flibusta) Search(ctx context.Context, query string) ([]models.SearchRes
 			DownloadURL: bestHref,
 			SizeHuman:   sizeHuman,
 			Format:      format,
+			Language:    language,
+			Year:        year,
 		})
 	}
 

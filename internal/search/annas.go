@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -136,6 +137,45 @@ func annasCardLink(link *goquery.Selection, iconClass string) string {
 		return ""
 	}
 	return strings.TrimSpace(matches.First().Text())
+}
+
+// annasCardCoverURL finds the cover belonging to the same result card as the
+// title link. A result card has both an image link and a title link to its MD5;
+// requiring both avoids accidentally borrowing an image from a neighbouring
+// card when Anna's nested flex layout changes.
+func annasCardCoverURL(link *goquery.Selection, pageURL string) string {
+	for parent := link.Parent(); parent.Length() > 0; parent = parent.Parent() {
+		if parent.Find("a[href*='/md5/']").Length() < 2 {
+			continue
+		}
+
+		image := parent.Find("img[src], img[data-src]").First()
+		if image.Length() == 0 {
+			return ""
+		}
+		rawURL, ok := image.Attr("src")
+		if !ok || strings.TrimSpace(rawURL) == "" {
+			rawURL, ok = image.Attr("data-src")
+		}
+		if !ok {
+			return ""
+		}
+
+		base, err := url.Parse(pageURL)
+		if err != nil {
+			return ""
+		}
+		candidate, err := url.Parse(strings.TrimSpace(rawURL))
+		if err != nil {
+			return ""
+		}
+		resolved := base.ResolveReference(candidate)
+		if resolved.Scheme != "http" && resolved.Scheme != "https" {
+			return ""
+		}
+		return resolved.String()
+	}
+	return ""
 }
 
 // AnnasArchive searches Anna's Archive by scraping HTML results.
@@ -294,6 +334,7 @@ func (a *AnnasArchive) doSearch(ctx context.Context, query, ext string, seenMD5 
 		}
 
 		publisher := annasPublisherImprint(annasCardLink(s, "mdi--company"))
+		coverURL := annasCardCoverURL(s, fmt.Sprintf("https://%s", a.cfg.AnnasArchiveDomain))
 
 		results = append(results, models.SearchResult{
 			Source:    "annas",
@@ -301,6 +342,7 @@ func (a *AnnasArchive) doSearch(ctx context.Context, query, ext string, seenMD5 
 			Author:    author,
 			SizeHuman: sizeHuman,
 			Format:    format,
+			CoverURL:  coverURL,
 			Language:  meta.Language,
 			Publisher: publisher,
 			Year:      meta.Year,

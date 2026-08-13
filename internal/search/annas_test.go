@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/PuerkitoBio/goquery"
 )
 
 func TestAnnasArchive_Metadata(t *testing.T) {
@@ -376,6 +377,9 @@ func TestAnnasArchive_SurfacesCardMetadata(t *testing.T) {
 	if got.Format != "epub" {
 		t.Errorf("Format = %q, want %q", got.Format, "epub")
 	}
+	if got.CoverURL != "https://example.invalid/cover.jpg" {
+		t.Errorf("CoverURL = %q, want card cover", got.CoverURL)
+	}
 
 	if results[1].Language != "de" {
 		t.Errorf("second result Language = %q, want %q", results[1].Language, "de")
@@ -386,6 +390,40 @@ func TestAnnasArchive_SurfacesCardMetadata(t *testing.T) {
 	// This card carries no year; nothing should be invented for it.
 	if results[1].Year != "" {
 		t.Errorf("second result Year = %q, want empty", results[1].Year)
+	}
+}
+
+func TestAnnasCardCoverURL(t *testing.T) {
+	makeDocument := func(coverURL string) *goquery.Document {
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+<div class="flex">
+  <a href="/md5/0123456789abcdef0123456789abcdef"><img src="` + coverURL + `"></a>
+  <div class="flex"><a id="title" href="/md5/0123456789abcdef0123456789abcdef">Title</a></div>
+</div>`))
+		if err != nil {
+			t.Fatalf("parse fixture: %v", err)
+		}
+		return doc
+	}
+
+	tests := []struct {
+		name  string
+		cover string
+		want  string
+	}{
+		{"absolute HTTPS", "https://covers.example/book.jpg", "https://covers.example/book.jpg"},
+		{"relative path", "/covers/book.jpg", "https://annas.example/covers/book.jpg"},
+		{"protocol relative", "//covers.example/book.jpg", "https://covers.example/book.jpg"},
+		{"unsafe scheme", "javascript:alert(1)", ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doc := makeDocument(test.cover)
+			if got := annasCardCoverURL(doc.Find("#title"), "https://annas.example/search?q=test"); got != test.want {
+				t.Errorf("annasCardCoverURL() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

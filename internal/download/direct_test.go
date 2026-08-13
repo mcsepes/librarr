@@ -39,6 +39,9 @@ func TestDetectFileExtension(t *testing.T) {
 		{"Empty ZIP PK\\x05\\x06", emptyZipBytes, ".epub"},
 		{"RAR/CBR magic bytes", rarBytes, ".cbr"},
 		{"MOBI BOOK header", mobiBytes, ".mobi"},
+		{"FB2 XML", []byte("<?xml version=\"1.0\"?><FictionBook xmlns=\"http://www.gribuser.ru/xml/fictionbook/2.0\">"), ".fb2"},
+		{"FB2 XML with byte-order mark", []byte("\xEF\xBB\xBF<FictionBook>"), ".fb2"},
+		{"Generic XML", []byte("<?xml version=\"1.0\"?><book>"), ""},
 		{"Unrecognized format", []byte("randomdata12345"), ""},
 		{"Too small (3 bytes)", []byte("xx\n"), ""},
 		{"Empty file", []byte{}, ""},
@@ -131,6 +134,32 @@ func TestDownloadFile_PDFSavedAsEPUBGetsRenamed(t *testing.T) {
 	// Verify the file is actually at the corrected path and the wrong-ext one is gone
 	if _, err := os.Stat(filePath); err != nil {
 		t.Errorf("corrected file not found: %v", err)
+	}
+}
+
+func TestDownloadFile_CorrectsFB2Extension(t *testing.T) {
+	fb2Content := []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<FictionBook xmlns=\"http://www.gribuser.ru/xml/fictionbook/2.0\">\n" + strings.Repeat("x", 2000))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(fb2Content)
+	}))
+	defer server.Close()
+
+	d := NewDirectDownloader(&config.Config{IncomingDir: t.TempDir(), UserAgent: "test"}, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
+
+	filePath, size, err := d.downloadFile(server.URL, "Kingpin", nil)
+	if err != nil {
+		t.Fatalf("downloadFile: %v", err)
+	}
+	if size != int64(len(fb2Content)) {
+		t.Errorf("size = %d, want %d", size, len(fb2Content))
+	}
+	if !strings.HasSuffix(filePath, ".fb2") {
+		t.Errorf("file path = %q, want FB2 extension", filePath)
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		t.Errorf("corrected FB2 file not found: %v", err)
 	}
 }
 

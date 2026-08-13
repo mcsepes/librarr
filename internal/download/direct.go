@@ -1,6 +1,7 @@
 package download
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -772,18 +773,21 @@ func detectFileExtension(path string) (string, error) {
 	}
 	defer f.Close()
 
-	var header [8]byte
-	n, err := f.Read(header[:])
+	// FB2 is XML rather than a binary container, so inspect enough of the
+	// prologue to find its root element as well as binary signatures.
+	header := make([]byte, 4096)
+	n, err := f.Read(header)
 	if err != nil && err != io.EOF {
 		return "", err
 	}
 	if n < 4 {
 		return "", nil
 	}
+	header = header[:n]
 
 	// Magic byte signatures
 	switch {
-	case string(header[:5]) == "%PDF-":
+	case len(header) >= 5 && string(header[:5]) == "%PDF-":
 		return ".pdf", nil
 	case header[0] == 0x50 && header[1] == 0x4B && (header[2] == 0x03 || header[2] == 0x05):
 		// ZIP container — could be EPUB, CBZ, or plain ZIP. For ebook downloads,
@@ -793,8 +797,22 @@ func detectFileExtension(path string) (string, error) {
 		return ".cbr", nil // RAR, likely CBR in ebook context
 	case string(header[:4]) == "BOOK" || (header[0] == 0xEB && header[2] == 0x48):
 		return ".mobi", nil
+	case isFB2(header):
+		return ".fb2", nil
 	}
 	return "", nil
+}
+
+// isFB2 identifies FictionBook 2 XML without treating arbitrary XML as a book.
+func isFB2(header []byte) bool {
+	header = bytes.TrimSpace(header)
+	header = bytes.TrimPrefix(header, []byte{0xEF, 0xBB, 0xBF})
+	if bytes.HasPrefix(header, []byte("<?xml")) {
+		if end := bytes.Index(header, []byte("?>")); end >= 0 {
+			header = bytes.TrimSpace(header[end+2:])
+		}
+	}
+	return bytes.HasPrefix(header, []byte("<FictionBook"))
 }
 
 // verifyEPUB validates that an EPUB file is a valid ZIP and its title matches.

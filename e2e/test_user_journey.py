@@ -98,6 +98,52 @@ def test_data_idx_maps_to_rendered_result_in_every_sort_mode(searched):
         assert mismatches == [], f"sort={mode}: {mismatches}"
 
 
+def test_search_filters_compose_and_reset(ui):
+    """Filters operate on the current streamed result set without another API call.
+
+    This deliberately uses mixed source data: the Gutenberg fixture has one
+    source and format, so it could not prove the selector values or their
+    composition.
+    """
+    page = ui["page"]
+    page.evaluate("""() => {
+        state.searchResults = [
+            {source: 'annas', title: 'Russian EPUB', format: 'epub', language: 'ru', year: '2012', md5: 'a1'},
+            {source: 'annas', title: 'Russian PDF', format: 'pdf', language: 'ru', year: '1999', md5: 'a2'},
+            {source: 'zlibrary', title: 'English EPUB', format: 'epub', language: 'en', year: '2020', source_id: 'z1'},
+            {source: 'openlibrary', title: 'Edition Without Details', source_id: 'o1'},
+        ];
+        state.searchFilters = {source: '', format: '', language: '', yearFrom: '', yearTo: ''};
+        document.getElementById('search-sort-bar').classList.remove('hidden');
+        document.getElementById('search-filter-bar').classList.remove('hidden');
+        syncSearchFilterControls();
+        renderSearchResults();
+    }""")
+
+    assert page.locator('[data-action="startDownload"]').count() == 4
+    assert set(page.locator('#search-filter-source option').all_text_contents()) >= {
+        "Anna's Archive", "Z-Library", "Open Library"
+    }
+    assert set(page.locator('#search-filter-format option').all_text_contents()) >= {"EPUB", "PDF"}
+    assert set(page.locator('#search-filter-language option').all_text_contents()) >= {"EN", "RU"}
+
+    page.select_option('#search-filter-source', 'annas')
+    page.select_option('#search-filter-format', 'epub')
+    page.select_option('#search-filter-language', 'ru')
+    page.fill('#search-filter-year-from', '2000')
+    assert page.locator('[data-action="startDownload"]').count() == 1
+    assert page.locator('.book-card h3').inner_text() == 'Russian EPUB'
+
+    page.fill('#search-filter-year-to', '2010')
+    assert page.locator('[data-action="startDownload"]').count() == 0
+    assert 'No results' in page.inner_text('#search-results')
+
+    page.click('[data-action="resetSearchFilters"]')
+    assert page.locator('[data-action="startDownload"]').count() == 4
+    assert page.input_value('#search-filter-year-from') == ''
+    assert page.input_value('#search-filter-year-to') == ''
+
+
 def test_retry_wait_shows_progress_in_search_and_downloads(searched):
     page = searched["page"]
     retry_text = page.evaluate("""() => {

@@ -59,6 +59,14 @@ const I18N = {
     sort_seeders: 'Seeders',
     sort_size: 'Size',
     n_results: '{n} results',
+    n_filtered_results: '{shown} of {total} results',
+    filter_all_sources: 'All sources',
+    filter_all_formats: 'All formats',
+    filter_all_languages: 'All languages',
+    filter_year_from: 'Year from',
+    filter_year_to: 'Year to',
+    filter_clear_title: 'Clear search filters',
+    no_filtered_results: 'No results match these filters',
     search_empty_title: 'Search for your next read',
     search_empty_hint: 'Try searching by title, author, or ISBN',
     no_results: 'No results found',
@@ -266,6 +274,14 @@ const I18N = {
     sort_seeders: 'Сидеры',
     sort_size: 'Размер',
     n_results: '{n} результатов',
+    n_filtered_results: '{shown} из {total} результатов',
+    filter_all_sources: 'Все источники',
+    filter_all_formats: 'Все форматы',
+    filter_all_languages: 'Все языки',
+    filter_year_from: 'Год от',
+    filter_year_to: 'Год до',
+    filter_clear_title: 'Сбросить фильтры поиска',
+    no_filtered_results: 'Нет результатов с выбранными фильтрами',
     search_empty_title: 'Найдите следующую книгу для чтения',
     search_empty_hint: 'Попробуйте искать по названию, автору или ISBN',
     no_results: 'Ничего не найдено',
@@ -463,6 +479,7 @@ function refreshDynamicContent() {
   // Re-render current tab content with new language
   const tab = state.currentTab;
   if (tab === 'search' && state.searchResults.length > 0) {
+    syncSearchFilterControls();
     renderSearchResults();
   } else if (tab === 'downloads') {
     refreshDownloads();
@@ -491,6 +508,7 @@ const state = {
   downloadJobs: [],
   pendingRetryDownloads: new Set(),
   sortMode: 'relevance',
+  searchFilters: { source: '', format: '', language: '', yearFrom: '', yearTo: '' },
   libraryPage: 1,
   libraryPages: 1,
   config: null,
@@ -950,9 +968,11 @@ function switchSearchTab(tab) {
   // Clear results when switching
   document.getElementById('search-results').innerHTML = '';
   document.getElementById('search-sort-bar').classList.add('hidden');
+  document.getElementById('search-filter-bar').classList.add('hidden');
   document.getElementById('search-no-results').classList.add('hidden');
   document.getElementById('search-empty').classList.remove('hidden');
   state.searchResults = [];
+  state.searchFilters = { source: '', format: '', language: '', yearFrom: '', yearTo: '' };
 
   // Update placeholder
   const placeholders = { ebooks: t('search_placeholder'), audiobooks: t('search_placeholder_ab'), manga: t('search_placeholder_manga') };
@@ -1006,6 +1026,7 @@ async function doSearch(query) {
   showSearchSkeleton();
   state.searchResults = [];
   document.getElementById('search-results').innerHTML = '';
+  document.getElementById('search-filter-bar').classList.add('hidden');
   document.getElementById('search-empty').classList.add('hidden');
   document.getElementById('search-no-results').classList.add('hidden');
   document.getElementById('search-spinner').classList.remove('hidden');
@@ -1093,6 +1114,7 @@ function updateSearchResults(results, searching) {
 
   if (state.searchResults.length === 0) {
     document.getElementById('search-sort-bar').classList.add('hidden');
+    document.getElementById('search-filter-bar').classList.add('hidden');
     if (searching) {
       document.getElementById('search-no-results').classList.add('hidden');
       return;
@@ -1105,7 +1127,8 @@ function updateSearchResults(results, searching) {
   hideSearchSkeleton();
   document.getElementById('search-no-results').classList.add('hidden');
   document.getElementById('search-sort-bar').classList.remove('hidden');
-  document.getElementById('search-result-count').textContent = t('n_results', {n: state.searchResults.length});
+  document.getElementById('search-filter-bar').classList.remove('hidden');
+  syncSearchFilterControls();
   renderSearchResults();
 }
 
@@ -1150,6 +1173,86 @@ function sortResults(results) {
   return sorted;
 }
 
+function setSearchFilter(field, value) {
+  if (!Object.prototype.hasOwnProperty.call(state.searchFilters, field)) return;
+  state.searchFilters[field] = value || '';
+  renderSearchResults();
+}
+
+function resetSearchFilters() {
+  state.searchFilters = { source: '', format: '', language: '', yearFrom: '', yearTo: '' };
+  syncSearchFilterControls();
+  renderSearchResults();
+}
+
+function filterSearchResults(results) {
+  const filters = state.searchFilters;
+  const parseFilterYear = value => /^\d{4}$/.test(value) ? Number.parseInt(value, 10) : NaN;
+  const yearFrom = parseFilterYear(filters.yearFrom);
+  const yearTo = parseFilterYear(filters.yearTo);
+  const hasYearFilter = Number.isInteger(yearFrom) || Number.isInteger(yearTo);
+
+  return results.filter(result => {
+    if (filters.source && result.source !== filters.source) return false;
+    if (filters.format && String(result.format || '').toLowerCase() !== filters.format) return false;
+    if (filters.language && String(result.language || '').toLowerCase() !== filters.language) return false;
+    if (!hasYearFilter) return true;
+
+    const year = parseFilterYear(String(result.year || ''));
+    if (!Number.isInteger(year) || year < 1000 || year > 2999) return false;
+    if (Number.isInteger(yearFrom) && year < yearFrom) return false;
+    if (Number.isInteger(yearTo) && year > yearTo) return false;
+    return true;
+  });
+}
+
+function searchFilterValues(field) {
+  const values = new Set();
+  state.searchResults.forEach(result => {
+    const value = String(result[field] || '').trim();
+    if (value) values.add(field === 'format' || field === 'language' ? value.toLowerCase() : value);
+  });
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
+function setSearchFilterOptions(id, field, emptyLabel, values, formatLabel) {
+  const select = document.getElementById(id);
+  const selected = state.searchFilters[field];
+  if (selected && !values.includes(selected)) values.push(selected);
+  select.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>` + values.map(value =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(formatLabel(value))}</option>`
+  ).join('');
+  select.value = selected;
+  select.setAttribute('aria-label', emptyLabel);
+}
+
+function syncSearchFilterControls() {
+  setSearchFilterOptions(
+    'search-filter-source', 'source', t('filter_all_sources'), searchFilterValues('source'),
+    value => (SOURCE_COLORS[value] || {label: value}).label,
+  );
+  setSearchFilterOptions(
+    'search-filter-format', 'format', t('filter_all_formats'), searchFilterValues('format'),
+    value => value.toUpperCase(),
+  );
+  setSearchFilterOptions(
+    'search-filter-language', 'language', t('filter_all_languages'), searchFilterValues('language'),
+    value => value.toUpperCase(),
+  );
+
+  const yearFrom = document.getElementById('search-filter-year-from');
+  const yearTo = document.getElementById('search-filter-year-to');
+  const reset = document.getElementById('search-filter-reset');
+  yearFrom.value = state.searchFilters.yearFrom;
+  yearTo.value = state.searchFilters.yearTo;
+  yearFrom.placeholder = t('filter_year_from');
+  yearTo.placeholder = t('filter_year_to');
+  yearFrom.setAttribute('aria-label', t('filter_year_from'));
+  yearTo.setAttribute('aria-label', t('filter_year_to'));
+  reset.title = t('filter_clear_title');
+  reset.setAttribute('aria-label', t('filter_clear_title'));
+}
+
 function parseSize(sizeStr) {
   if (!sizeStr) return 0;
   const s = sizeStr.toString().toUpperCase();
@@ -1163,9 +1266,16 @@ function parseSize(sizeStr) {
 
 function renderSearchResults() {
   const container = document.getElementById('search-results');
-  const sorted = sortResults(state.searchResults);
+  const filtered = filterSearchResults(state.searchResults);
+  const sorted = sortResults(filtered);
   state.renderedResults = sorted; // data-idx on cards indexes THIS (sorted) order
-  container.innerHTML = sorted.map((r, i) => renderBookCard(r, i)).join('');
+  const count = document.getElementById('search-result-count');
+  count.textContent = sorted.length === state.searchResults.length
+    ? t('n_results', {n: sorted.length})
+    : t('n_filtered_results', {shown: sorted.length, total: state.searchResults.length});
+  container.innerHTML = sorted.length > 0
+    ? sorted.map((r, i) => renderBookCard(r, i)).join('')
+    : `<p class="col-span-full py-8 text-center text-sm text-slate-500">${escapeHtml(t('no_filtered_results'))}</p>`;
 }
 
 function renderBookCard(result, index) {
@@ -2685,6 +2795,7 @@ const CLICK_ACTIONS = {
   switchSearchTab: el => switchSearchTab(el.dataset.arg),
   switchLibraryTab: el => switchLibraryTab(el.dataset.arg),
   setSortMode: el => setSortMode(el.dataset.arg),
+  resetSearchFilters: () => resetSearchFilters(),
   testConnection: el => testConnection(el.dataset.arg),
   saveIntegration: el => saveIntegration(el.dataset.arg),
   toggleMobileNav: () => toggleMobileNav(),
@@ -2726,6 +2837,7 @@ document.addEventListener('click', e => {
 });
 
 const CHANGE_ACTIONS = {
+  setSearchFilter: el => setSearchFilter(el.dataset.filter, el.value),
   changeUserRole: el => changeUserRole(+el.dataset.id, el.value),
   toggleForeignLangFilter: () => toggleForeignLangFilter(),
   toggleRemoveTorrent: () => toggleRemoveTorrent(),
@@ -2736,6 +2848,12 @@ document.addEventListener('change', e => {
   if (!el) return;
   const fn = CHANGE_ACTIONS[el.dataset.actionChange];
   if (fn) fn(el, e);
+});
+
+document.addEventListener('input', e => {
+  const el = e.target.closest('[data-action-input]');
+  if (!el || el.dataset.actionInput !== 'setSearchFilter') return;
+  setSearchFilter(el.dataset.filter, el.value);
 });
 
 // Cover-image fallback (replaces inline onerror=). 'error' events don't

@@ -185,6 +185,20 @@
         </div>
       </div>
 
+      <!-- Result filters are populated from the current search response. -->
+      <div id="search-filter-bar" class="hidden grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+        <select id="search-filter-source" class="min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" data-action-change="setSearchFilter" data-filter="source"></select>
+        <select id="search-filter-format" class="min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" data-action-change="setSearchFilter" data-filter="format"></select>
+        <select id="search-filter-language" class="min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" data-action-change="setSearchFilter" data-filter="language"></select>
+        <input id="search-filter-year-from" type="number" min="1000" max="2999" inputmode="numeric" class="min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500" data-action-input="setSearchFilter" data-filter="yearFrom">
+        <div class="flex gap-2">
+          <input id="search-filter-year-to" type="number" min="1000" max="2999" inputmode="numeric" class="min-w-0 flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500" data-action-input="setSearchFilter" data-filter="yearTo">
+          <button id="search-filter-reset" data-action="resetSearchFilters" class="shrink-0 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" type="button">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+      </div>
+
       <!-- Search skeleton -->
       <div id="search-skeleton" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6"></div>
 

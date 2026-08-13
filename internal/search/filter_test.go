@@ -116,6 +116,16 @@ func TestFilterAndSortResults(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps BookTracker results with unknown seeders", func(t *testing.T) {
+		results := []models.SearchResult{
+			{Source: "booktracker", Title: "Толстой - Война и мир", Seeders: 0},
+		}
+		filtered := FilterAndSortResults(results, "Толстой", 10000, 2000000000)
+		if len(filtered) != 1 {
+			t.Fatalf("expected BookTracker result with unknown seeders to remain, got %d", len(filtered))
+		}
+	})
+
 	t.Run("filters torrents outside size bounds", func(t *testing.T) {
 		results := []models.SearchResult{
 			{Source: "torrent", Title: "Too Small", Seeders: 5, Size: 100},

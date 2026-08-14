@@ -106,6 +106,35 @@ func TestBookTrackerParseSearchResultsWithoutTableRows(t *testing.T) {
 	}
 }
 
+func TestBookTrackerSeparatesEbooksAndAudiobooks(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`<html><body>
+<div class="topictitle"><a class="topictitle" href="viewtopic.php?t=1">Автор - Электронная книга [epub]</a></div>
+<div class="topictitle"><a class="topictitle" href="viewtopic.php?t=2">Автор - Аудиокнига [m4b]</a></div>
+<div class="topictitle"><a class="topictitle" href="viewtopic.php?t=3">Автор - Без формата (аудиокнига)</a></div>
+</body></html>`))
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	ebooks := (&BookTracker{tab: "main"}).parseSearchResults(doc, "https://booktracker.example")
+	if len(ebooks) != 1 {
+		t.Fatalf("ebook results = %d, want 1", len(ebooks))
+	}
+	if ebooks[0].Format != "epub" || ebooks[0].MediaType != "ebook" {
+		t.Errorf("ebook result = %#v", ebooks[0])
+	}
+
+	audiobooks := (&BookTracker{tab: "audiobook"}).parseSearchResults(doc, "https://booktracker.example")
+	if len(audiobooks) != 2 {
+		t.Fatalf("audiobook results = %d, want 2", len(audiobooks))
+	}
+	for _, result := range audiobooks {
+		if result.MediaType != "audiobook" {
+			t.Errorf("result MediaType = %q, want audiobook", result.MediaType)
+		}
+	}
+}
+
 func TestBookTrackerSearch(t *testing.T) {
 	srv := newBookTrackerTestServer(t, true)
 	defer srv.Close()
@@ -202,6 +231,9 @@ func TestBookTrackerAudiobookTab(t *testing.T) {
 	results, err := s.Search(context.Background(), "x")
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("audiobook search returned %d ebook results, want 0", len(results))
 	}
 	for _, r := range results {
 		if r.MediaType != "audiobook" {

@@ -62,12 +62,20 @@ func (b *BookTracker) SearchTab() string { return b.tab }
 func (b *BookTracker) DownloadType() string { return "torrent" }
 
 var (
-	btTopicLinkRe = regexp.MustCompile(`viewtopic\.php\?t=(\d+)`)
-	btSizeRe      = regexp.MustCompile(`(\d+[\.,]?\d*)\s*(Г[Бб]|М[Бб]|К[Бб]|G[Bb]|M[Bb]|K[Bb])`)
-	btSeedRe      = regexp.MustCompile(`(\d+)`)
-	btFormatRe    = regexp.MustCompile(`(?i)\b(epub|pdf|fb2|mobi|djvu|mp3|m4b|ogg|flac|aac)\b`)
-	btAuthorRe    = regexp.MustCompile(`^(.+?)\s*-\s*`)
+	btTopicLinkRe   = regexp.MustCompile(`viewtopic\.php\?t=(\d+)`)
+	btSizeRe        = regexp.MustCompile(`(\d+[\.,]?\d*)\s*(Г[Бб]|М[Бб]|К[Бб]|G[Bb]|M[Bb]|K[Bb])`)
+	btSeedRe        = regexp.MustCompile(`(\d+)`)
+	btFormatRe      = regexp.MustCompile(`(?i)\b(epub|pdf|fb2|mobi|djvu|mp3|m4a|m4b|ogg|opus|flac|aac)\b`)
+	btAudioFormatRe = regexp.MustCompile(`(?i)\b(mp3|m4a|m4b|ogg|opus|flac|aac)\b`)
+	btAuthorRe      = regexp.MustCompile(`^(.+?)\s*-\s*`)
 )
+
+func isBookTrackerAudiobook(title string) bool {
+	lowerTitle := strings.ToLower(title)
+	return btAudioFormatRe.MatchString(title) ||
+		strings.Contains(lowerTitle, "аудиокниг") ||
+		strings.Contains(lowerTitle, "audiobook")
+}
 
 // login authenticates to BookTracker and caches the session for 30 minutes.
 func (b *BookTracker) login() error {
@@ -229,6 +237,14 @@ func (b *BookTracker) parseSearchResults(doc *goquery.Document, baseURL string) 
 		}
 
 		if IsSuspicious(title) {
+			return
+		}
+
+		// The current search form no longer exposes the old forum filter. Keep
+		// the separate ebook and audiobook sources by classifying the title that
+		// BookTracker returns. Results without an audio marker remain ebooks.
+		isAudiobook := isBookTrackerAudiobook(title)
+		if (b.tab == "audiobook") != isAudiobook {
 			return
 		}
 
